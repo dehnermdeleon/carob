@@ -18,12 +18,15 @@ carob_script <- function(path) {
     carob_effort = NA,
     carob_date="2023-09-18",
 	treatment_vars = "planting_date;variety",
-	response_vars="yield"
+	response_vars="yield",
+	notes = "LLM-review: [medium, admin] Village is stored in adm3. trial_id is the row number plus location. data_type is experiment while on_farm is TRUE."
   )
 
   f <- ff[basename(ff) == "CSISA_KVK_Wheat_DoS_Trial_Data.csv"]
-  r <- read.csv(f, fileEncoding = "latin1") 
-
+  #r <- read.csv(f, fileEncoding = "latin1") 
+  r <- read.csv(f, fileEncoding = "latin1", check.names = FALSE)
+  names(r) <- trimws(names(r))
+  
   ## use a subset 
   from <- c("Village","District","State","Block","PreviousCrop","Variety","SowingDate","HarvestDate","BiomassYield","SowingSchedule","Latitude", "Longitude")
   
@@ -59,7 +62,7 @@ carob_script <- function(path) {
   g <- gsub("10.26.26", "10:26:26", g)
 
   # convert kg/acre to kg/ha
-  d$BasalNPK_kg_ha <- r$BasalNPK * 0.404686 
+  d$BasalNPK_kg_ha <- r$BasalNPK / 0.404686 
   
   #  h <- r[c(1406,1523,1425,1540,184,185,299,388,390,393,397,399,453,454,490,497,498,502,601,954,957),] 
   #  These rows have peculiar NPK variations, should be looked into
@@ -86,23 +89,27 @@ carob_script <- function(path) {
 
   d$N_splits <- 3
   # convert kg/acre to kg/ha 
-  d$BasalDAP_kg_ha <- r$BasalDAP * 0.404686 
+  d$BasalDAP_kg_ha <- r$BasalDAP / 0.404686 
   
   # DAP in carob has 18% N and 20% P
   d$N_fertilizer2 <- ifelse(!is.na(d$BasalDAP_kg_ha),d$BasalDAP_kg_ha * 0.18,0)
   d$P_fertilizer2 <- ifelse(!is.na(d$BasalDAP_kg_ha),d$BasalDAP_kg_ha * 0.20,0)
   
   #MOP in  carob has 49.8% K
-  d$MOP_kg_ha <- r$BasalMOP * 0.404686 #kg/acre to kg/ha 
-  d$P_fertilizer3 <- ifelse(!is.na(d$BasalDAP_kg_ha),d$BasalDAP_kg_ha * 0.20,0)
+  d$MOP_kg_ha <- r$BasalMOP / 0.404686 #kg/acre to kg/ha 
   
-  d$Zn_fertilizer <- ifelse(!is.na(r$BasalZn),r$BasalZn * 0.404686, 0) #to convert from kg/acre to kg/ha
-  d$N_fertilizer <- d$N_fertilizer1 + d$N_fertilizer2 
-  d$P_fertilizer <- d$P_fertilizer1 + d$P_fertilizer2 + d$P_fertilizer3
-  d$yield <- r$GrainYield * 1000 #ton/acre to kg/ha
+  d$Zn_fertilizer <- ifelse(!is.na(r$BasalZn),r$BasalZn / 0.404686, 0) #to convert from kg/acre to kg/ha
+  d$P_fertilizer1 <- d$P_fertilizer1 / 2.29 # P2O5 to P
+  d$K_fertilizer <- d$K_fertilizer / 1.2051 # K2O to K
+  d$K_fertilizer <- d$K_fertilizer + ifelse(is.na(d$MOP_kg_ha), 0, d$MOP_kg_ha * 0.498)
+  urea_ha <- rowSums(cbind(r$Split1Urea, r$Split2Urea, r$Split3Urea), na.rm = TRUE) / 0.404686
+  d$N_fertilizer <- d$N_fertilizer1 + d$N_fertilizer2 + urea_ha * 0.46
+  d$P_fertilizer <- d$P_fertilizer1 + d$P_fertilizer2
+  d$yield <- r$GrainYield * 1000 # t/ha to kg/ha
   d$yield_part <- "grain"
   d$seed_weight <- r$TestWeight
 	d$location <- trimws(d$location)
+	d$location[d$location %in% c("sakra", "Sakara")] <- "Sakra"
   d$trial_id <- paste(1:nrow(d), d$location, sep = "_")
   # d$tiller_count <- r$TillersCount are these  important variables? 
   # d$grain_count <- r$GrainsCount   
@@ -120,16 +127,16 @@ carob_script <- function(path) {
   gi <- data.frame(country = c("India", "India", "India", "India", "India", "India", "India", "India", "India", "India", "India", "India"),
                     adm1 = c("Bihar", "UP", "Bihar", "UP", "UP", "Bihar", "Bihar", "Bihar", "Bihar", "Bihar", "UP", "UP"),
                     location = c("Raxaul", "Kaptanganj", "Singheshwar", "fazilnagar", "Dudhi", "Halsi", "Piro", "Bandra", "Barauni", "Chakia", "Fazilnagar", "Hata"),
-                    longitude = c(84.8051, 83.6992, 86.8157, 84.0544, 83.0141, 86.0554,
+                    longitude = c(84.8051, 83.6992, 86.8120, 84.0544, 83.0141, 86.0554,
                             84.3541, 85.6226, 86.0284, 84.9933, 84.0544, 83.6678),
-                    latitude = c(26.9556, 26.9257, 26.0258, 26.6824, 24.1148, 25.0332,
+                    latitude = c(26.9556, 26.9257, 26.0190, 26.6824, 24.1148, 25.0332,
                             25.3383, 26.0493, 25.4315, 26.4704, 26.6824, 26.8307))
   del <- merge(d[is.na(d$latitude) | is.na(d$longitude), c("trial_id", "country", "adm2", "location")],
                gi, by.x = c("country", "location"), by.y = c("country", "location"), all.x = TRUE)
   del$longitude[del$location == "Gayghat"] <- 84.138
   del$latitude[del$location == "Gayghat"] <- 25.632
-  del$longitude[del$location == "Ghailadh"] <- 86.687
-  del$latitude[del$location == "Ghailadh"] <- 25.977
+  del$longitude[del$location == "Ghailadh"] <- 86.739
+  del$latitude[del$location == "Ghailadh"] <- 25.923
   del$longitude[del$location == "Gharani"] <- 84.573
   del$latitude[del$location == "Gharani"] <- 25.410
   del$longitude[del$location == "Gori-Bazar"] <- 83.224
@@ -156,6 +163,19 @@ carob_script <- function(path) {
     d[d$trial_id == tid, "latitude"] <- el$latitude
   }
   
+  # Source GPS for these blocks falls in Nepal (lat ~26.5-26.9; blocks are at ~25.9-26.0).
+  # Every row in these blocks with lat > 26.3 is outside its district, so replace with block HQ coords
+  fixgeo <- function(adm2, loc, lon, lat) {
+    j <- which(d$adm2 == adm2 & d$location == loc & d$latitude > 26.3)
+    d$longitude[j] <<- lon; d$latitude[j] <<- lat; d$geo_from_source[j] <<- FALSE
+  }
+  
+  fixgeo("Madhepura",   "Murliganj",   86.988, 25.892) # https://en.wikipedia.org/wiki/Murliganj_(community_development_block)
+  fixgeo("Madhepura",   "Madhepura",   86.779, 25.917) # https://en.wikipedia.org/wiki/Madhepura_(community_development_block)
+  fixgeo("Madhepura",   "Shankarpur",  86.865, 26.031) # https://en.wikipedia.org/wiki/Shankarpur_(community_development_block)
+  fixgeo("Madhepura",   "Ghailadh",    86.753, 25.948) # https://en.wikipedia.org/wiki/Ghelardh_(community_development_block)
+  fixgeo("Madhepura",   "Singheshwar", 86.812, 26.019) # https://www.geonames.org/search.html?q=Singheshwar
+  fixgeo("Muzaffarpur", "Sakra",       85.565, 25.972) # https://www.latlong.net/place/sakra-bihar-india-18783.html
   
 	d$adm3 <- trimws(d$adm3)
 	

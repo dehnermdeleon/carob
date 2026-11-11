@@ -8,23 +8,28 @@ This document tells an AI coding agent how to turn a published dataset into a Ca
 
 This document supplements those pages with practical, agent-specific detail. If they ever disagree, follow the official guidelines.
 
-**Before writing, also read a few existing scripts in `scripts/<group>/`** — especially the same group you are targeting — to see the conventions applied to real datasets (e.g. recent files in `scripts/varieties/` such as `doi_10.7910_DVN_SMGA6L.R`, or any script in `scripts/agronomy/` or `scripts/survey/`). They are the best templates for structure, naming, units, and how metadata and geo/housekeeping variables are set.
+**Before writing, also read a few existing scripts in `scripts/<group>/`** — especially the same group you are targeting — to see the conventions applied to real datasets (e.g. files in `scripts/varieties_other/` such as `doi_10.7910_DVN_SMGA6L.R`, or any script in `scripts/agronomy/` or `scripts/survey/`). They are the best templates for structure, naming, units, and how metadata and geo/housekeeping variables are set.
 
 Do NOT guess silently. If you get stuck on *what* a value should be (not *how* to code it), leave a clear`# comment` in the code, and add a line to the `## NOTE:` or `## ISSUES` block at the top of the scripts. It is better not to process a variable (and leave a comment about it) than to introduce errors.
 
 It is of fundamental importance that no critical information is lost to analyze the data as intended. Resist simplifying the data to the point where relevant information is lost
 
-**You stay in charge.** Using AI to help is fine, but you are responsible for the result — do not blindly trust generated code, mappings, or `## NOTES`/`## ISSUES`. Verify every claim against the actual data and the publication before you leave it in the script. A wrong note or a plausible-but-incorrect mapping is worse than an honest "I could not determine this" (in `## ISSUES`).
+**Do not make things look good** do not leave things out, or fudge. Scripts must try to cover the data fully, and if new variables are needed, or if values do not look good, so be it. 
+
+**Do not delete files in _todo** These should be renamed (`git mv`) to be able to track the changes made.
+
 
 ### Human review is mandatory (agent must say this)
 
-The **human author** of the script must review **every line of code** and **every comment** (`#`, `## NOTES`, `## ISSUES`, `## NEW VARIABLES`) before submitting. The agent drafts; the human owns the result.
+The **human author** of the script must review **every line of code** and **every comment** (`#`, `## NOTES`, `## ISSUES`, `## NEW VARIABLES`, `## NOT PROCESSED`) before submitting. The agent drafts; the human owns the result.
 
 **Agent obligation:** whenever you deliver or hand off a Carob script (draft finished, file moved to `scripts/<group>/`, or a PR is ready), you **must** tell the human clearly and explicitly, in your own message to them, something equivalent to:
 
 > Before you submit: you must personally read every line of code and every comment in this script. Do not trust AI output. Only after that review, fill in `carob_contributor` and put the attestation sentence in the PR.
 
 Do not soft-pedal this. Do not skip it because the script "looks done."
+
+
 
 
 ---
@@ -222,6 +227,7 @@ d$yield_moisture <- as.numeric(NA)    # % moisture if known
 General rules:
 
 - **variables** all variables should be processed unless they are redundant (used to compute a variable of interest, or derived thereof) or cannot be interpreted. Write a comment for each variable that is not processed.
+- **Unprocessed variables list.** At the top of the script, under `## NOT PROCESSED`, list every raw variable (column, sheet, or file) that is possibly relevant but was not processed, one per line, with the source file/sheet, the original name, what it seems to represent, and why it was not processed (e.g. unclear unit or code, no terminag match yet, needs a decision). Do not list purely administrative or redundant columns (e.g. row numbers, enumerator names, values already used to compute a processed variable). This lets the reviewer see at a glance what information is left in the raw data.
 - **Do not add empty variables just because they are required.** A `write_files()` "missing variables" message means: check whether you have a real value (from the data, codebook, or publication). It does **not** mean invent a column of `NA`s or `""` to satisfy `required_variables.csv`. If you do not have a value, omit the variable and note it in `## ISSUES`. An empty placeholder is worse than a missing-variable message.
 - **treatment variables** it is imperative that all treatment variables are included as individual variables and that they are interpretable. It is _not_ sufficient to only have it as part of a treatment code (in variable "treatment"). This holds **even when terminag has no matching variable name**: give the treatment its own clear new variable name (ending in an underscore, see "New variable names" below) rather than burying it only in `treatment`. Such a new variable triggers a warning and is dropped from the written output, but that is fine — naming it explicitly is what lets a maintainer add the term to terminag (a separate process). A missing vocabulary term is never a reason to hide a treatment inside the `treatment` code.
 - **Variable (Column) names** should match a variable name from terminag. 
@@ -352,6 +358,8 @@ The goal is that every remaining warning is either intentional and explained, or
 
 Do **not** force data into a one-row-per-unit shape when that loses information. If a dataset has several record types (e.g. a household survey with per-variety records *and* a separate "largest plot" block), capture each in its own `data.frame` with interpretable, standardized names rather than deduplicating away real observations. Decide how to write extra tables (e.g. as "long" records) separately.
 
+Write concise NOTES and ISSUES. NOTES are background info. ISSUES about judgement calls that were or still need to be made. In the code, do *not* refer to the ISSUES by number like `# see ISSUES 4` as the issues list may change. Just make the comment again, perhapts in abridged form. Unless very short (2-3 words) put comments on their own line above the code it refers to.
+
 ---
 
 
@@ -409,13 +417,19 @@ Do **not** force data into a one-row-per-unit shape when that loses information.
 - when you move a dataset to `_pending` or `_rejected`, say so — and why — in the PR message.
 
 
-## 13. Pre-submission checklist
+## 13 Extract values from publication 
+
+- if a publication URI is provided, locate and read the publication for (a) consistency with the values and (b) to extract values that are in the publication (often in the Methods section) but not in the data. These are often constants for the dataset (e.g. amount of N applied in a trial about something else), but become variables when the data is combined with other datasets.
+
+
+## 14. Pre-submission checklist
 
 - [ ] File named `<dataset_id>.R` and placed in `scripts/<group>/`.
 - [ ] Title + abstract copied into the script; 
 - [ ] `## NOTES` describe peculiarities --- make these succinct!
 - [ ] `## ISSUES` notes any caveats that need attention --- make these succinct!
 - [ ] `## NOTES`/`## ISSUES` are correct — verified against the data and paper, not blindly trusted.
+- [ ] `## NOT PROCESSED` lists all possibly relevant raw variables that were not processed, and why.
 - [ ] `uri`, `group`, `get_data`, `get_metadata`, `write_files` all present.
 - [ ] Metadata: real `data_organization`, `data_type`, `treatment_vars`, `response_vars`, `carob_LLM`, `carob_date`, `carob_completion`, `carob_effort`; `NA` (not `""`) for absent fields; treatments and responses not swapped.
 - [ ] Associated publication's Methods checked for location/management/design/units; values taken from it are commented and (if a paper exists) a RIS added to `references/`.
